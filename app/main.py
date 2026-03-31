@@ -1,4 +1,7 @@
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from fastapi import Request
 from db.models import create_tables
 from core.conversation_manager import ConversationManager
 from core.error_parser.parser_router import detect_language_and_parse
@@ -13,9 +16,12 @@ create_tables()
 
 manager = ConversationManager()
 
-@app.get("/")
-def home():
-    return {"message": "ATEIA is running"}
+templates = Jinja2Templates(directory="app/templates")
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
 
 @app.get("/health")
 def health_check():
@@ -26,9 +32,11 @@ def health_check():
 def chat(request: ChatRequest):
     message = request.message
 
-    if manager.get_stage() == "AWAITING_ERROR":
-        parsed = detect_language_and_parse(message)
+    stage = manager.get_stage()
 
+    if stage == "AWAITING_ERROR":
+
+        parsed = detect_language_and_parse(message)
         manager.receive_error(message)
 
         context_message = generate_context_request(
@@ -41,7 +49,7 @@ def chat(request: ChatRequest):
             f"{context_message}"
         )
 
-    elif manager.get_stage() == "AWAITING_CODE":
+    elif stage == "AWAITING_CODE":
 
         manager.receive_code(message)
 
@@ -59,7 +67,7 @@ def chat(request: ChatRequest):
         )
 
     else:
-        response = "Analysis stage reached (AI will run here later)."
+        response = "Please reset the conversation and start again."
 
     return {"reply": response}
 

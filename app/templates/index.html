@@ -58,6 +58,13 @@
 </div>
 
 <script>
+let sessionId = localStorage.getItem("session_id");
+
+if (!sessionId) {
+    sessionId = Date.now().toString();
+    localStorage.setItem("session_id", sessionId);
+}
+
 async function sendMessage() {
     let msg = document.getElementById("message").value;
 
@@ -74,7 +81,10 @@ async function sendMessage() {
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify({
+            message: msg,
+            session_id: sessionId
+        })
     });
 
     let data = await response.json();

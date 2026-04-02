@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
 from db.models import create_tables
+from db.database import get_connection
 from core.conversation_manager import ConversationManager
 from core.error_parser.parser_router import detect_language_and_parse
 from schemas.chat_request import ChatRequest
@@ -31,6 +32,16 @@ def health_check():
 @app.post("/chat")
 def chat(request: ChatRequest):
     message = request.message
+    session_id = request.session_id
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # ✅ Save USER message
+    cursor.execute(
+        "INSERT INTO messages (session_id, sender, content) VALUES (?, ?, ?)",
+        (session_id, "user", message)
+    )
 
     stage = manager.get_stage()
 
@@ -69,6 +80,15 @@ def chat(request: ChatRequest):
     else:
         response = "Please reset the conversation and start again."
 
+    # ✅ Save ASSISTANT response
+    cursor.execute(
+        "INSERT INTO messages (session_id, sender, content) VALUES (?, ?, ?)",
+        (session_id, "assistant", response)
+    )
+
+    conn.commit()
+    conn.close()
+
     return {"reply": response}
 
 @app.get("/reset")
@@ -76,3 +96,16 @@ def reset_chat():
     global manager
     manager = ConversationManager()
     return {"message": "Conversation reset"}
+
+@app.post("/create_session")
+def create_session():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("INSERT INTO sessions DEFAULT VALUES")
+    session_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return {"session_id": session_id}

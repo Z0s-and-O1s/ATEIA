@@ -43,7 +43,7 @@ Module 7: LLM Integration
 Module 8: Response Formatter
 
 🔹 Phase 4 – Frontend
-
+    
 Module 9: Chat UI Interface
 
 🔹 Phase 5 – Deployment Readiness

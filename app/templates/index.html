@@ -58,17 +58,41 @@
 </div>
 
 <script>
-let sessionId = localStorage.getItem("session_id");
 
-if (!sessionId) {
-    sessionId = Date.now().toString();
-    localStorage.setItem("session_id", sessionId);
+document.getElementById("message").addEventListener("keypress", function(e) {
+    if (e.key === "Enter") {
+        sendMessage();
+    }
+});
+
+let sessionId = null;
+
+async function initSession() {
+    sessionId = localStorage.getItem("session_id");
+
+    if (!sessionId) {
+        let res = await fetch("/create_session", {
+            method: "POST"
+        });
+
+        let data = await res.json();
+
+        sessionId = data.session_id;
+        localStorage.setItem("session_id", sessionId);
+    }
 }
+
+initSession();  
 
 async function sendMessage() {
     let msg = document.getElementById("message").value;
 
     if (!msg) return;
+
+    if (!sessionId) {
+        alert("Session not ready. Refresh.");
+        return;
+    }
 
     let chat = document.getElementById("chat");
 
@@ -83,7 +107,7 @@ async function sendMessage() {
         },
         body: JSON.stringify({
             message: msg,
-            session_id: sessionId
+            session_id: parseInt(sessionId) // 🔥 important
         })
     });
 

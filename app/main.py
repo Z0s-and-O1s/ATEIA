@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -15,7 +18,7 @@ app = FastAPI()
 
 create_tables()
 
-manager = ConversationManager()
+session_managers = {}
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -31,65 +34,104 @@ def health_check():
 
 @app.post("/chat")
 def chat(request: ChatRequest):
+    import os
+
     message = request.message
     session_id = request.session_id
 
+    # ✅ STEP 1 — SAVE USER MESSAGE
     conn = get_connection()
     cursor = conn.cursor()
 
-    # ✅ Save USER message
     cursor.execute(
         "INSERT INTO messages (session_id, sender, content) VALUES (?, ?, ?)",
         (session_id, "user", message)
     )
 
-    stage = manager.get_stage()
+    conn.commit()
+    conn.close()
 
-    if stage == "AWAITING_ERROR":
+    # ✅ STEP 2 — FETCH HISTORY
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        parsed = detect_language_and_parse(message)
-        manager.receive_error(message)
+    cursor.execute(
+        "SELECT sender, content FROM messages WHERE session_id = ? ORDER BY message_id DESC LIMIT 10",
+        (session_id,)
+    )
 
-        context_message = generate_context_request(
-            parsed["language"], parsed["error_type"]
+    history = cursor.fetchall()
+    conn.close()
+
+    messages = []
+
+    # 🧠 SYSTEM PROMPT
+    messages.append({
+        "role": "system",
+        "content": (
+            "You are ATEIA, a smart, friendly coding assistant. "
+            "Talk like a human mentor and help debug step-by-step."
+        )
+    })
+
+    for msg in reversed(history):
+        role = "user" if msg["sender"] == "user" else "assistant"
+        messages.append({
+            "role": role,
+            "content": msg["content"]
+        })
+
+    # 🚀 TRY OPENAI (IF AVAILABLE)
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.7
         )
 
-        response = (
-            f"Detected Language: {parsed['language']}\n"
-            f"Error Type: {parsed['error_type']}\n\n"
-            f"{context_message}"
-        )
+        reply = response.choices[0].message.content
 
-    elif stage == "AWAITING_CODE":
+    # 🧠 FALLBACK (NO API / QUOTA)
+    except Exception as e:
+        print("AI FAILED:", str(e))
 
-        manager.receive_code(message)
+        user_input = message.lower()
 
-        parsed = detect_language_and_parse(manager.error_message)
+        if "error" in user_input:
+            reply = "Hmm, looks like you're facing an error. Can you share the full error message or your code? I'll help you fix it step-by-step."
 
-        explanation = generate_explanation(
-            manager.error_message,
-            manager.code_snippet
-        )
+        elif "print(x)" in user_input:
+            reply = "You're trying to use variable 'x' without defining it first. Try this:\n\nx = 10\nprint(x)"
 
-        response = format_debug_response(
-            parsed["language"],
-            parsed["error_type"],
-            explanation
-        )
+        elif "typeerror" in user_input:
+            reply = "This looks like a type mismatch. You might be combining incompatible types like int and string. Try converting them properly."
 
-    else:
-        response = "Please reset the conversation and start again."
+        elif "nameerror" in user_input:
+            reply = "This means a variable is being used before it's defined. Make sure you assign a value before using it."
 
-    # ✅ Save ASSISTANT response
+        elif "hi" in user_input or "hello" in user_input:
+            reply = "Hey! 👋 I'm ATEIA. What are you working on today? Got any bugs I can help with?"
+
+        else:
+            reply = "Got it 👍 Tell me more about your issue or share your code. I'll help you debug it."
+
+    # ✅ STEP 3 — SAVE ASSISTANT REPLY
+    conn = get_connection()
+    cursor = conn.cursor()
+
     cursor.execute(
         "INSERT INTO messages (session_id, sender, content) VALUES (?, ?, ?)",
-        (session_id, "assistant", response)
+        (session_id, "assistant", reply)
     )
 
     conn.commit()
     conn.close()
 
-    return {"reply": response}
+    return {"reply": reply}
 
 @app.get("/reset")
 def reset_chat():
@@ -109,3 +151,36 @@ def create_session():
     conn.close()
 
     return {"session_id": session_id}
+
+@app.get("/sessions")
+def get_sessions():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT session_id FROM sessions ORDER BY session_id DESC")
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [{"session_id": row["session_id"]} for row in rows]
+
+@app.get("/messages/{session_id}")
+def get_messages(session_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT sender, content FROM messages WHERE session_id = ? ORDER BY message_id",
+        (session_id,)
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        {
+            "sender": row["sender"],
+            "content": row["content"]
+        }
+        for row in rows
+    ]

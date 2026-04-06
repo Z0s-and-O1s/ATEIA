@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html>
 <head>
     <title>ATEIA Chat</title>
@@ -232,6 +232,284 @@ async function startApp() {
 }
 
 startApp();
+</script>
+
+</body>
+</html> -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ATEIA Chat</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Poppins', sans-serif;
+            display: flex;
+            height: 100vh;
+            background: #f4f6f8;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 250px;
+            background: #1f2937;
+            color: white;
+            padding: 15px;
+            transition: width 0.3s;
+            position: relative;
+        }
+
+        #sidebar.collapsed {
+            width: 70px;
+        }
+
+        #toggleBtn {
+            position: absolute;
+            top: 10px;
+            right: -15px;
+            background: #3b82f6;
+            border: none;
+            color: white;
+            font-size: 18px;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+        }
+
+        #sidebar button.new-chat {
+            width: 100%;
+            padding: 10px;
+            margin-top: 40px;
+            margin-bottom: 15px;
+            background: #3b82f6;
+            border: none;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .chat-item {
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+
+        .chat-item:hover {
+            background: #374151;
+        }
+
+        #sidebar.collapsed .chat-item,
+        #sidebar.collapsed .new-chat {
+            display: none;
+        }
+
+        /* Main */
+        #main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header (Centered Title) */
+        #header {
+            background: white;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+        }
+
+        #title {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        #subtitle {
+            font-size: 13px;
+            color: gray;
+        }
+
+        /* Chat */
+        #chat {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            max-width: 60%;
+            padding: 12px 15px;
+            margin: 10px;
+            border-radius: 12px;
+            line-height: 1.4;
+        }
+
+        .user {
+            align-self: flex-end;
+            background: #3b82f6;
+            color: white;
+        }
+
+        .bot {
+            align-self: flex-start;
+            background: #e5e7eb;
+            color: black;
+        }
+
+        /* Input */
+        #inputBox {
+            display: flex;
+            padding: 15px;
+            background: white;
+            border-top: 1px solid #ddd;
+        }
+
+        #message {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+
+        button.send-btn {
+            margin-left: 10px;
+            padding: 12px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div id="sidebar">
+    <button id="toggleBtn" onclick="toggleSidebar()">☰</button>
+    <button class="new-chat" onclick="createNewChat()">+ New Chat</button>
+    <div id="chatList"></div>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+    <!-- Centered Header -->
+    <div id="header">
+        <div id="title">ATEIA</div>
+        <div id="subtitle">Intelligent Error Assistant</div>
+    </div>
+
+    <!-- Chat -->
+    <div id="chat"></div>
+
+    <!-- Input -->
+    <div id="inputBox">
+        <input type="text" id="message" placeholder="Type your message..." />
+        <button class="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+
+</div>
+
+<script>
+let sessionId = null;
+
+function toggleSidebar() {
+    document.getElementById("sidebar").classList.toggle("collapsed");
+}
+
+// Load chats
+async function loadChats() {
+    let res = await fetch("/sessions");
+    let chats = await res.json();
+
+    let chatList = document.getElementById("chatList");
+    chatList.innerHTML = "";
+
+    chats.forEach(chat => {
+        let div = document.createElement("div");
+        div.className = "chat-item";
+        div.innerText = "Chat " + chat.session_id;
+        div.onclick = () => loadMessages(chat.session_id);
+        chatList.appendChild(div);
+    });
+}
+
+// New chat
+async function createNewChat() {
+    let res = await fetch("/create_session", { method: "POST" });
+    let data = await res.json();
+
+    sessionId = data.session_id;
+    document.getElementById("chat").innerHTML = "";
+
+    loadChats();
+}
+
+// Load messages
+async function loadMessages(id) {
+    sessionId = id;
+
+    let res = await fetch(`/messages/${id}`);
+    let messages = await res.json();
+
+    let chat = document.getElementById("chat");
+    chat.innerHTML = "";
+
+    messages.forEach(msg => {
+        let div = document.createElement("div");
+        div.className = "message " + (msg.sender === "user" ? "user" : "bot");
+        div.innerHTML = msg.content.replace(/\n/g, "<br>");
+        chat.appendChild(div);
+    });
+}
+
+// Send message
+async function sendMessage() {
+    let input = document.getElementById("message");
+    let msg = input.value;
+
+    if (!msg || !sessionId) return;
+
+    let chat = document.getElementById("chat");
+
+    let userDiv = document.createElement("div");
+    userDiv.className = "message user";
+    userDiv.innerText = msg;
+    chat.appendChild(userDiv);
+
+    input.value = "";
+
+    let res = await fetch("/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            message: msg,
+            session_id: sessionId
+        })
+    });
+
+    let data = await res.json();
+
+    let botDiv = document.createElement("div");
+    botDiv.className = "message bot";
+    botDiv.innerHTML = data.reply.replace(/\n/g, "<br>");
+    chat.appendChild(botDiv);
+
+    chat.scrollTop = chat.scrollHeight;
+}
+
+// Init
+createNewChat();
+loadChats();
 </script>
 
 </body>
